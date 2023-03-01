@@ -7,8 +7,9 @@ def read_inputs():
     argparser.add_argument("graph_file", type=str)
     argparser.add_argument("truth_path", type=str)
     argparser.add_argument("num_slices", type=int)
+    argparser.add_argument("mode", type=str)
     args = argparser.parse_args()
-    return args.graph_file, args.truth_path, args.num_slices
+    return args.graph_file, args.truth_path, args.num_slices, args.mode
 
 def process_graph(graph_file):
     curr_src_id = -1
@@ -74,9 +75,9 @@ def bfs(edge_indices, edges):
             break
     return heights
 
-def bfs_slice(edge_indices, edges, num_slices, slice_size):
-    print("Total number of slices: ",num_slices, " Slice size: ", slice_size)
+def bfs_graph_sync(edge_indices, edges, num_slices, slice_size):
     heights = [1000 for _ in range(len(edge_indices))]
+    temp_heights = [1000 for _ in range(len(edge_indices))]
     frontier = [[]  for _ in range(num_slices)]
     frontier[0] = [0]
     heights[0] = 0
@@ -97,14 +98,61 @@ def bfs_slice(edge_indices, edges, num_slices, slice_size):
                 curr_edges = edges[start : end]
                 for edge in curr_edges:
                     slice_index = math.floor(edge/slice_size)
-                    if heights[edge] > (heights[curr_id] + 1):
-                        heights[edge] = heights[curr_id] + 1
+                    if temp_heights[edge] > (heights[curr_id] + 1):
+                        temp_heights[edge] = heights[curr_id] + 1
                         if slice_index == slice:
                             next_frontier.append(edge)
                         else:
                             frontier[slice_index].append(edge)
             frontier[slice] = next_frontier
-            
+            count = 0
+            for f in frontier:
+                # print(f)
+                if len(f) == 0:
+                    count += 1
+            if count == len(frontier):
+                break
+        for i in range(len(edge_indices)):
+                if (heights[i] > temp_heights[i]):
+                    heights[i] = temp_heights[i]
+        if count == len(frontier):
+            break
+    print(f"Number of slices: {num_slices}. Slice size: {slice_size} with mode: {mode}. Total number of slices switching: {slices}")
+    return heights
+
+def bfs_slice_sync(edge_indices, edges, num_slices, slice_size):
+    heights = [1000 for _ in range(len(edge_indices))]
+    temp_heights = [1000 for _ in range(len(edge_indices))]
+    frontier = [[]  for _ in range(num_slices)]
+    frontier[0] = [0]
+    heights[0] = 0
+    count = 0
+    slices = 1
+    while True:
+        for slice in range(num_slices):
+            next_frontier = []
+            if (len(frontier[slice]) == 0):
+                continue
+            slices += 1
+            for curr_id in frontier[slice]:
+                start = edge_indices[curr_id]
+                if (curr_id != len(edge_indices) - 1):
+                    end = edge_indices[curr_id + 1]
+                else:
+                    end = len(edge_indices)
+                curr_edges = edges[start : end]
+                for edge in curr_edges:
+                    slice_index = math.floor(edge/slice_size)
+                    if temp_heights[edge] > (heights[curr_id] + 1):
+                        temp_heights[edge] = heights[curr_id] + 1
+                        if slice_index == slice:
+                            next_frontier.append(edge)
+                        else:
+                            frontier[slice_index].append(edge)
+            for i in range(len(edge_indices)):
+                if (heights[i] > temp_heights[i]):
+                    heights[i] = temp_heights[i]
+            frontier[slice] = next_frontier
             count = 0
             for f in frontier:
                 if len(f) == 0:
@@ -113,12 +161,51 @@ def bfs_slice(edge_indices, edges, num_slices, slice_size):
                 break
         if count == len(frontier):
             break
-    print(slices)
+    print(f"Number of slices: {num_slices}. Slice size: {slice_size} with mode: {mode}. Total number of slices switching: {slices}")
+    return heights
+
+def bfs_async_slice(edge_indices, edges, num_slices, slice_size):
+    heights = [1000 for _ in range(len(edge_indices))]
+    frontier = [[]  for _ in range(num_slices)]
+    frontier[0] = [0]
+    heights[0] = 0
+    count = 0
+    slices = 1
+    while True:
+        for slice in range(num_slices):
+            if (len(frontier[slice]) == 0):
+                continue
+            slices += 1
+            for curr_id in frontier[slice]:
+                start = edge_indices[curr_id]
+                if (curr_id != len(edge_indices) - 1):
+                    end = edge_indices[curr_id + 1]
+                else:
+                    end = len(edge_indices)
+                curr_edges = edges[start : end]
+                for edge in curr_edges:
+                    slice_index = math.floor(edge/slice_size)
+                    if heights[edge] > (heights[curr_id] + 1):
+                        heights[edge] = heights[curr_id] + 1
+                        if slice_index == slice:
+                            frontier[slice].append(edge)
+                        else:
+                            frontier[slice_index].append(edge)
+            frontier[slice] = []
+            count = 0
+            for f in frontier:
+                if len(f) == 0:
+                    count += 1
+            if count == len(frontier):
+                break
+        if count == len(frontier):
+            break
+    print(f"Number of slices: {num_slices}. Slice size: {slice_size} with mode: {mode}. Total number of slices switching: {slices}")
     return heights
 
 if __name__ == "__main__":
 
-    graph_file_name, truth_file_path, num_slices = read_inputs()
+    graph_file_name, truth_file_path, num_slices, mode = read_inputs()
 
     edge_indices = []
     edges = []
@@ -126,9 +213,14 @@ if __name__ == "__main__":
         edge_indices, edges = process_graph(graph_file)
 
     num_vertex_slice = math.ceil(float(len(edge_indices)/num_slices))
-    # print(len(edge_indices), num_slice, num_vertex_slice)
-    heights = bfs_slice(edge_indices, edges, num_slices, num_vertex_slice) 
+
+    if (mode == "sliced"):
+        heights = bfs_slice_sync(edge_indices, edges, num_slices, num_vertex_slice)
+    elif (mode == "graph"):
+        heights = bfs_graph_sync(edge_indices, edges, num_slices, num_vertex_slice)
+    elif (mode == "async"):
+        heights = bfs_async_slice(edge_indices, edges, num_slices, num_vertex_slice)
    
 
-    with open(f"{truth_file_path}/truth2.json", "w") as truth_file:
+    with open(f"{truth_file_path}/truth.json", "w") as truth_file:
         json.dump(heights, truth_file)
